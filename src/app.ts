@@ -6,6 +6,14 @@ import bodyParser from 'body-parser';
 import session from 'express-session';
 import passport from 'passport';
 import passportLocalMongoose from 'passport-local-mongoose';
+import homeRoute from './routes/home';
+import loginRoute from './routes/login';
+import registerRoute from './routes/register';
+import submitRoute from './routes/submit';
+import logoutRoute from './routes/logout';
+import secretsRoute from './routes/secrets';
+const User = require('./models/user');
+const userSchema = require('./models/user');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
 
@@ -30,28 +38,26 @@ app.use(session({
 app.use(passport.initialize()); //use passport and initialize it
 app.use(passport.session());   //use passport with the session
 
-mongoose.connect('mongodb://localhost:27017/userDB');
-
-const userSchema = new mongoose.Schema({
-email: String,
-password: String,
-googleId: String,
-secret: String
-});
+mongoose.connect('mongodb://localhost:27017/userDB')
+.then((result)=>{
+    console.log('Connected to the database');
+})
+.catch((err)=>{
+    console.log(err);
+})
 
 userSchema.plugin(passportLocalMongoose);
 userSchema.plugin(findOrCreate);
 
-const User: any = mongoose.model('User', userSchema);
 
 passport.use(User.createStrategy());
 
-passport.serializeUser(function(user, done) {
+passport.serializeUser((user, done)=> {
     done(null, user.id);
 });
 
-passport.deserializeUser(function(id, done) {
-  User.findById(id, function(err: any, user: any) {
+passport.deserializeUser((id, done)=> {
+  User.findById(id, (err: any, user: any)=> {
     done(err, user);
   });
 });
@@ -69,9 +75,8 @@ passport.use(new GoogleStrategy({
   }
 ));
 
-app.get('/', (req: Request, res: Response) => {
-    res.render('home');
-});
+//home routes
+app.use(homeRoute);
 
 app.get('/auth/google',
     passport.authenticate('google', { scope: ['profile'] }));
@@ -83,89 +88,21 @@ app.get('/auth/google/secrets',
     res.redirect('/secrets');
   });
 
-app.get('/secrets', (req: Request, res: Response) => { 
-    User.find({'secret': {$ne: null}}, (err: any, foundUser: any) => {
-        if(err){
-            console.log(err);
-        }else{
-            if(foundUser){
-                res.render('secrets', {usersWithSecrets: foundUser});
-            }
-        }
-    });
-});
+//secrets routes
+app.use(secretsRoute)
 
-app.get('/login', (req: Request, res: Response) => {
-    res.render('login');
-});
+//login routes
+app.use(loginRoute);
 
-app.post('/login',(req: Request, res: Response) => {
-    const user = new User({
-        username: req.body.username,
-        password: req.body.password
-    });
-    req.login(user, (err) => {
-        if(err){
-            console.log(err);
-        }else{
-            passport.authenticate('local')(req, res, () => {
-                res.redirect('secrets');
-            });
-        }
-    });
-});
+//register routes
+app.use(registerRoute);
 
+//submit routes
+app.use(submitRoute);
 
-app.get('/register', (req: Request, res: Response) => {
-    res.render('register');
-});
+//logout routes
+app.use(logoutRoute);
 
-app.post('/register', (req: Request, res: Response) => {
-
-    User.register({username: req.body.username}, req.body.password, (err: any, user: any) => {
-    if(err){
-        console.log(err);
-        res.redirect('/register');
-    }else{
-        passport.authenticate('local')(req, res, () => {
-            res.redirect('secrets');
-        });
-    }   
-    });  
-});
-
-app.get('/submit', (req: Request, res: Response) => {
-    if(req.isAuthenticated()){
-        res.render('submit');
-    }else{
-        res.redirect('/login');
-    }
-});
-
-app.post('/submit', (req: Request, res: Response) => {
-    const submittedText = req.body.secret;
-    User.findById(req.user?.id, (err: any, foundUser: any) =>{
-        if(err){
-            console.log(err);
-        }else{
-            if(foundUser){
-                foundUser.secret = submittedText;
-                foundUser.save(() => {
-                    res.redirect('/secrets');
-                });
-            }
-        }
-    });
-});
-
-app.get('/logout', (req: Request, res: Response) => {
-    req.logout((err) => {
-        if(err){
-            console.log(err);
-        } 
-        res.redirect('/');
-    });
-});
 
 app.listen(3000, ()=>{
     console.log('Server started running on port 3000');
