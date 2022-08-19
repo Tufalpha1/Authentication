@@ -5,16 +5,16 @@ import ejs from 'ejs';
 import bodyParser from 'body-parser';
 import session from 'express-session';
 import passport from 'passport';
-import passportLocalMongoose from 'passport-local-mongoose';
 import homeRoute from './routes/home';
+import oauthRoute from './routes/oauth';
 import loginRoute from './routes/login';
 import registerRoute from './routes/register';
 import submitRoute from './routes/submit';
 import logoutRoute from './routes/logout';
 import secretsRoute from './routes/secrets';
 const User = require('./models/user');
-const userSchema = require('./models/user');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const FacebookStrategy = require('passport-facebook').Strategy;
 const findOrCreate = require('mongoose-findorcreate');
 
 const app: Application = express();
@@ -30,14 +30,16 @@ declare global {
   }
 //use the session package and set it up with some initial configuration
 app.use(session({
-    secret: 'Our little secret.',
+    secret: process.env.SECRET!, //non null assertation (this type will never be null or undefined)
     resave: false,
     saveUninitialized: true,
   }));
 
+  //middlewares
 app.use(passport.initialize()); //use passport and initialize it
 app.use(passport.session());   //use passport with the session
 
+//connecting to the database
 mongoose.connect('mongodb://localhost:27017/userDB')
 .then((result)=>{
     console.log('Connected to the database');
@@ -45,9 +47,6 @@ mongoose.connect('mongodb://localhost:27017/userDB')
 .catch((err)=>{
     console.log(err);
 })
-
-userSchema.plugin(passportLocalMongoose);
-userSchema.plugin(findOrCreate);
 
 
 passport.use(User.createStrategy());
@@ -62,6 +61,7 @@ passport.deserializeUser((id, done)=> {
   });
 });
 
+//google strategy
 passport.use(new GoogleStrategy({
     clientID: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
@@ -74,19 +74,24 @@ passport.use(new GoogleStrategy({
     });
   }
 ));
+//facebook strategy
+passport.use(new FacebookStrategy({
+  clientID: process.env.FACEBOOK_APP_ID,
+  clientSecret: process.env.FACEBOOK_APP_SECRET,
+  callbackURL: "http://localhost:3000/auth/facebook/secrets"
+},
+function(accessToken: any, refreshToken: any, profile: any, cb: any) {
+  User.findOrCreate({ username: profile.displayName, facebookId: profile.id }, (err: any, user: any)=> {
+    return cb(err, user);
+  });
+}
+));
 
 //home routes
 app.use(homeRoute);
 
-app.get('/auth/google',
-    passport.authenticate('google', { scope: ['profile'] }));
-
-app.get('/auth/google/secrets', 
-  passport.authenticate('google', { failureRedirect: '/login' }),
-  (req: Request, res: Response) => {
-    // Successful authentication, redirect secrets.
-    res.redirect('/secrets');
-  });
+//oauth routes
+app.use(oauthRoute);
 
 //secrets routes
 app.use(secretsRoute)
